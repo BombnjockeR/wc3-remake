@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pyro TD 0.31</title>
+<style>
+  /* Sizes of the Warcraft III console are given in "console pixels" (the 1600x512 human console textures)
+     and scaled by --s; the console is centred on wide screens (--cx = left edge). */
+  :root {
+    --s: .72; --cx: 0px; --cw: 1152px;
+    --gold: #ffcc00; --text: #ffffff; --dim: #b9b2a2; --trim2: #5a4a2a;
+    --font: "Friz", "Friz Quadrata", "Friz Quadrata TT", "Palatino Linotype", Georgia, serif;
+    --tipborder: none; --dlgborder: none; --dlgback: none;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--text); font: 13px/1.3 var(--font); overflow: hidden; user-select: none; }
+  body { cursor: var(--cur-normal, default); }
+  body.targeting, body.targeting #gl { cursor: var(--cur-target, crosshair); }
+  button, select, input { font: inherit; color: inherit; cursor: inherit; }
+  .hidden { display: none !important; }
+  #gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #ov { position: fixed; left: 0; top: 0; width: 100vw; pointer-events: none; }
+  .px { position: absolute; } /* positioned in console pixels by JS */
+
+  /* ---------- Warcraft frames: 8-piece border textures turned into CSS border-images by console.js */
+  .wcbox { background: rgba(0,0,0,.82) var(--dlgback); background-blend-mode: normal; border: 24px solid transparent; border-image: var(--dlgborder) 32 / 24px stretch;
+    box-shadow: 0 6px 22px rgba(0,0,0,.7); }
+  .wcbox.plain { border: 2px solid var(--trim2); border-image: none; background: rgba(8,7,5,.9); }
+  .dbtn { display: block; width: 100%; margin: 6px 0; padding: 7px 12px; color: var(--gold); text-shadow: 1px 1px 0 #000; letter-spacing: .02em;
+    background: linear-gradient(180deg, #2b2416, #110d08); border: 8px solid transparent; border-image: var(--btnborder) 16 / 8px stretch; }
+  .dbtn:hover { color: #fff; filter: brightness(1.25); }
+  .dbtn:active { transform: translateY(1px); border-image: var(--btnborderdown) 16 / 8px stretch; }
+  .dbtn:disabled { color: #777; filter: grayscale(1); }
+  .dbtn.small { width: auto; display: inline-block; padding: 5px 22px; margin-top: 10px; }
+  .dtitle { color: var(--gold); font-size: 18px; text-align: center; margin: 0 0 10px; text-shadow: 1px 1px 0 #000; }
+  .dtitle.big { font-size: 30px; }
+  .dsub { text-align: center; color: var(--dim); margin-bottom: 12px; }
+  .center { text-align: center; }
+  .sw { display: inline-block; width: 12px; height: 12px; border: 1px solid #000; margin-right: 6px; vertical-align: -1px; }
+
+  /* ---------- top bar (HumanUITile 0..95) */
+  #topbar { position: fixed; top: 0; left: 0; right: 0; height: calc(95px * var(--s)); z-index: 5; pointer-events: none;
+    background: var(--img-topfill, linear-gradient(#1a160f, #0b0906)) repeat-x; background-size: auto calc(42px * var(--s)); }
+  #topart { position: absolute; top: 0; left: var(--cx); width: var(--cw); height: 100%; background: var(--img-top) no-repeat; background-size: 100% 100%; }
+  #topart > * { pointer-events: auto; }
+  .tbtn { top: calc(4px * var(--s)); height: calc(32px * var(--s)); width: calc(160px * var(--s)); background: transparent; border: 0; color: var(--gold);
+    font-size: calc(17px * var(--s)); text-shadow: 1px 1px 0 #000; }
+  .tbtn:hover { color: #fff; background: rgba(255,220,120,.08); }
+  .tbtn small { color: var(--dim); margin-left: 4px; font-size: .7em; }
+  .res { top: calc(4px * var(--s)); height: calc(32px * var(--s)); width: calc(150px * var(--s)); display: flex; align-items: center; gap: calc(8px * var(--s)); padding-left: calc(12px * var(--s));
+    font-size: calc(19px * var(--s)); color: #fff; text-shadow: 1px 1px 0 #000; }
+  .res img { width: calc(26px * var(--s)); height: calc(26px * var(--s)); }
+  .res.upkeep { color: #00ff00; font-size: calc(16px * var(--s)); }
+  #clock { left: calc(772px * var(--s)); top: calc(17px * var(--s)); width: calc(56px * var(--s)); height: calc(56px * var(--s)); border-radius: 50%; z-index: -1; }
+
+  /* ---------- timer window / board / test controls */
+  #timerwin { position: fixed; top: calc(98px * var(--s)); right: 10px; min-width: 230px; padding: 4px 8px; display: flex; justify-content: space-between; gap: 14px; z-index: 4; font-size: 15px; }
+  #tw-title { color: var(--gold); } #tw-time { color: #fff; font-variant-numeric: tabular-nums; }
+  #board { position: fixed; top: calc(98px * var(--s) + 54px); right: 10px; width: 230px; z-index: 4; font-size: 12px; padding: 2px 4px; }
+  #board-h { color: var(--gold); padding: 2px 6px; cursor: pointer; border-bottom: 1px solid var(--trim2); display: flex; justify-content: space-between; }
+  #board.min .bb { display: none; }
+  #board .bb { padding: 4px 6px 2px; }
+  #board .br { display: flex; justify-content: space-between; padding: 1px 0; }
+  #board .br small { color: var(--dim); }
+  #testbar { position: fixed; top: calc(98px * var(--s)); left: 10px; z-index: 4; display: flex; align-items: center; gap: 2px; padding: 3px 6px; font-size: 11px; }
+  #testbar span { color: var(--dim); margin-right: 4px; }
+  #testbar button { background: #1e1912; border: 1px solid #4a3c22; color: var(--dim); padding: 1px 7px; border-radius: 2px; }
+  #testbar button.on { color: var(--gold); border-color: #a88a4a; }
+  #testbar button:disabled { opacity: .4; }
+  #netinfo { color: #8fd; margin-left: 8px; }
+
+  /* ---------- messages */
+  #msgs { position: fixed; left: 16px; bottom: calc(var(--ch) + 40px); max-width: 55vw; pointer-events: none; z-index: 3; }
+  .msg { font-size: 15px; text-shadow: 1px 1px 1px #000, 0 0 3px #000; margin-top: 2px; transition: opacity 1.2s; }
+  .msg.fade { opacity: 0; }
+  #errmsg { position: fixed; left: 0; right: 0; bottom: calc(var(--ch) + 14px); text-align: center; color: var(--gold); font-size: 17px; text-shadow: 1px 1px 1px #000, 0 0 4px #000; pointer-events: none; transition: opacity .8s; z-index: 3; }
+  #errmsg.fade { opacity: 0; }
+
+  /* ---------- dialogs & panels */
+  #dialog { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); width: 340px; padding: 6px 10px; z-index: 8; }
+  .dtime { text-align: center; color: var(--dim); margin-top: 4px; }
+  #panel { position: fixed; left: 50%; top: calc(100px * var(--s)); transform: translateX(-50%); width: min(740px, 94vw); max-height: calc(100vh - var(--ch) - 110px * var(--s)); overflow: auto; padding: 6px 14px; z-index: 9; text-align: center; }
+  .ptitle { color: var(--gold); font-size: 21px; margin-bottom: 12px; }
+  .qwrap { display: grid; grid-template-columns: 180px 1fr; gap: 12px; text-align: left; min-height: 260px; }
+  .qlist { border: 1px solid var(--trim2); background: rgba(0,0,0,.5); }
+  .qi { padding: 6px 10px; color: var(--dim); }
+  .qi.on, .qi:hover { color: var(--gold); background: rgba(168,138,74,.15); }
+  .qbody { border: 1px solid var(--trim2); background: rgba(0,0,0,.5); padding: 10px 12px; max-height: 50vh; overflow: auto; line-height: 1.45; }
+  .optrow { display: flex; justify-content: space-between; align-items: center; margin: 8px 4px; text-align: left; color: var(--dim); gap: 12px; }
+  .optrow select, .optrow input[type=range] { background: #120f0b; border: 1px solid var(--trim2); color: #fff; padding: 3px 6px; }
+  #panel .dbtn { max-width: 360px; margin-left: auto; margin-right: auto; }
+  .atable { width: 100%; border-collapse: collapse; text-align: left; }
+  .atable th { color: var(--gold); font-weight: normal; border-bottom: 1px solid var(--trim2); padding: 4px 6px; }
+  .atable td { padding: 4px 6px; border-bottom: 1px solid rgba(90,74,42,.4); }
+  .logbody { text-align: left; max-height: 50vh; overflow: auto; background: rgba(0,0,0,.5); border: 1px solid var(--trim2); padding: 8px 10px; line-height: 1.45; }
+  .logbody .lt { color: var(--dim); font-size: 11px; }
+  #over { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.45); z-index: 30; }
+  #over .wcbox { width: 380px; padding: 10px 18px; }
+  #chat { position: fixed; left: 16px; bottom: calc(var(--ch) + 10px); z-index: 6; display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: rgba(0,0,0,.6); border: 1px solid var(--trim2); }
+  #chat span { color: var(--gold); }
+  #chatin { width: 380px; background: transparent; border: 0; outline: 0; color: #fff; font-size: 14px; }
+
+  /* ---------- tooltip */
+  #tip { position: fixed; right: 6px; bottom: calc(var(--ch) + 2px); width: 340px; padding: 4px 6px; z-index: 20; pointer-events: none; font-size: 13px; line-height: 1.35;
+    background: rgba(0,0,0,.86); border: 12px solid transparent; border-image: var(--tipborder) 16 / 12px stretch; }
+  #tip .tt { color: #fff; margin-bottom: 3px; }
+  #tip .hk { color: var(--gold); }
+  #tip .tc { margin: 2px 0 5px; display: flex; align-items: center; gap: 4px; }
+  #tip .tc img { width: 16px; height: 16px; }
+  #tip .tl { color: var(--dim); font-size: 12px; margin-bottom: 4px; }
+  #tip .tb { color: #fff; }
+  #tip .tw { color: #ff5050; margin-top: 5px; }
+  #tip .tm { color: #8a8270; margin-top: 6px; font-size: 11px; word-break: break-all; }
+
+  /* ---------- bottom console (HumanUITile 186..512) */
+  #console { position: fixed; left: 0; right: 0; bottom: 0; height: var(--ch); z-index: 4; pointer-events: none; }
+  #console::before, #console::after { content: ''; position: absolute; bottom: 0; width: var(--cx); height: 100%; background: var(--img-fill) repeat-x left bottom; background-size: auto var(--ch); }
+  #console::before { left: 0; } #console::after { right: 0; }
+  #consoleart { position: absolute; left: var(--cx); bottom: 0; width: var(--cw); height: var(--ch); background: var(--img-console) no-repeat; background-size: 100% 100%; pointer-events: auto; }
+  #minimap { left: calc(19px * var(--s)); top: calc(34px * var(--s)); width: calc(278px * var(--s)); height: calc(278px * var(--s)); cursor: inherit; }
+  .mmb { left: calc(311px * var(--s)); width: calc(42px * var(--s)); height: calc(37px * var(--s)); border: 0; background: transparent; color: var(--gold); font-size: calc(18px * var(--s)); padding: 0; }
+  .mmb:hover { background: rgba(255,220,120,.15); }
+  .mmb.on { color: #fff; background: rgba(255,220,120,.25); }
+  #portrait { left: calc(431px * var(--s)); top: calc(103px * var(--s)); width: calc(149px * var(--s)); height: calc(160px * var(--s)); }
+  #hp, #mp { left: calc(431px * var(--s)); width: calc(149px * var(--s)); height: calc(23px * var(--s)); text-align: center; font-size: calc(17px * var(--s)); line-height: calc(23px * var(--s)); text-shadow: 1px 1px 0 #000; font-variant-numeric: tabular-nums; }
+  #hp { top: calc(270px * var(--s)); } #mp { top: calc(299px * var(--s)); color: #6aa5ff; }
+  #info { left: calc(612px * var(--s)); top: calc(100px * var(--s)); width: calc(388px * var(--s)); height: calc(222px * var(--s)); overflow: hidden; font-size: calc(17px * var(--s)); }
+  #invcover { left: calc(936px * var(--s)); top: calc(-186px * var(--s)); width: calc(256px * var(--s)); height: calc(512px * var(--s)); background: var(--img-invcover) no-repeat; background-size: 100% 100%; pointer-events: none; }
+  #card { left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+  .cbtn { position: absolute; border: 0; padding: 0; background-size: cover; background-position: center; pointer-events: auto;
+    box-shadow: inset 0 0 0 1px #000, inset 2px 2px 0 rgba(255,255,255,.22), inset -2px -2px 0 rgba(0,0,0,.6); }
+  .cbtn:hover { filter: brightness(1.3); }
+  .cbtn.down { transform: scale(.94); }
+  .cbtn.off { filter: grayscale(1) brightness(.5); }
+  .cbtn.poor { filter: saturate(.55) brightness(.75); }
+  .cbtn.passive { filter: saturate(.85); box-shadow: inset 0 0 0 1px #000, inset 0 0 0 3px rgba(0,0,0,.5); }
+  .cbtn.active { box-shadow: inset 0 0 0 1px #000, inset 0 0 0 3px #ffd84a, 0 0 8px rgba(255,216,74,.6); }
+  .cbtn .hkb { position: absolute; left: 3px; top: 1px; font-size: calc(15px * var(--s)); color: var(--gold); text-shadow: 1px 1px 0 #000, -1px -1px 0 #000; }
+  .cbtn .lvl { position: absolute; right: 2px; bottom: 1px; font-size: calc(14px * var(--s)); color: #fff; background: rgba(0,0,0,.75); padding: 0 3px; }
+  .cbtn.ph { font-size: 0; }
+  #info .uname { color: #fff; font-size: 1.15em; text-align: center; text-shadow: 1px 1px 0 #000; }
+  #info .usub { text-align: center; color: var(--dim); font-size: .8em; margin-bottom: .4em; }
+  #info .stats { display: grid; grid-template-columns: 1fr 1fr; gap: .3em .8em; }
+  #info .st { display: flex; align-items: center; gap: .45em; }
+  #info .st img { width: 2.2em; height: 2.2em; border: 1px solid #000; }
+  #info .st .k { color: var(--gold); font-size: .78em; } #info .st .v { font-size: .95em; }
+  #info .bonus { color: #00ff00; }
+  #info .notes { margin-top: .4em; display: flex; flex-wrap: wrap; gap: 4px; }
+  .buff { font-size: .72em; padding: 1px 6px; border: 1px solid var(--trim2); background: rgba(0,0,0,.4); color: #cfe; }
+  .buff.gold { color: var(--gold); } .buff.red { color: #ff7070; }
+  #info .abrow { margin-top: .4em; display: flex; gap: 3px; flex-wrap: wrap; }
+  #info .abi { width: 2em; height: 2em; border: 1px solid #000; }
+  #info .model { position: absolute; left: 0; right: 0; bottom: 0; color: #7d7462; font-size: .65em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bwrap { display: flex; gap: .7em; align-items: center; margin-top: .6em; }
+  .bico { width: 3em; height: 3em; border: 1px solid #000; }
+  .bcol { flex: 1; } .btxt { color: var(--gold); margin-bottom: 4px; }
+  .bbar { position: relative; height: 1.1em; background: #0a0806; border: 1px solid #000; box-shadow: 0 0 0 1px var(--trim2); }
+  #bprog { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(180deg, #4ac0ff, #1a5aa0); }
+  #bpct { position: absolute; inset: 0; text-align: center; font-size: .75em; line-height: 1.1em; text-shadow: 1px 1px 0 #000; }
+
+  /* ---------- lobby & loading */
+  #lobby { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: #000 var(--img-lobby, none) center/cover no-repeat; }
+  #lobby::before { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+  #lobby .wcbox { position: relative; width: min(1000px, 96vw); max-height: 94vh; overflow: auto; padding: 6px 14px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; }
+  #lobby h2 { color: var(--gold); font-weight: normal; margin: 0 0 10px; font-size: 19px; border-bottom: 1px solid var(--trim2); padding-bottom: 6px; }
+  .lteam { color: var(--gold); margin: 10px 0 4px; }
+  .lslot { display: flex; align-items: center; gap: 8px; padding: 3px 0; min-height: 30px; }
+  .lslot select, #lobby input { background: #120f0b; border: 1px solid var(--trim2); color: #fff; padding: 4px 6px; border-radius: 2px; }
+  .lslot select { width: 170px; } .lcol { color: var(--dim); font-size: 12px; }
+  .lname { width: 170px; padding: 4px 6px; color: #fff; }
+  .lname.open { color: #8a8270; font-style: italic; }
+  .ltake { font-size: 11px; padding: 1px 6px; background: #1e1912; border: 1px solid var(--trim2); color: var(--gold); }
+  #lb-preview { width: 100%; max-width: 256px; aspect-ratio: 1; display: block; margin: 0 auto 10px; border: 2px solid #000; box-shadow: 0 0 0 1px var(--trim2); background: #000; }
+  #lb-title { color: var(--gold); font-size: 21px; text-align: center; }
+  #lb-desc, #lb-author { color: #ddd; text-align: center; margin: 4px 0; }
+  .lrow { display: flex; align-items: center; gap: 10px; margin: 8px 0; } .lrow label { width: 110px; color: var(--dim); }
+  #lb-start { margin-top: 14px; font-size: 17px; }
+  #lb-err { color: #ff5050; text-align: center; min-height: 18px; }
+  #lb-net { margin-top: 14px; border-top: 1px solid var(--trim2); padding-top: 10px; }
+  #lb-net .row2 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #lb-net .dbtn { width: auto; display: inline-block; margin: 2px 0; padding: 5px 14px; }
+  #lb-code { font-size: 28px; letter-spacing: .25em; color: #fff; text-shadow: 0 0 8px rgba(255,204,0,.6); }
+  #lb-joincode { width: 110px; text-transform: uppercase; letter-spacing: .2em; font-size: 16px; }
+  #lb-status { color: #8fd; min-height: 18px; margin-top: 6px; font-size: 12.5px; }
+  .lnote { color: #8a8270; font-size: 11.5px; margin-top: 8px; line-height: 1.4; }
+  #loading { position: fixed; inset: 0; z-index: 45; background: #000; display: grid; place-items: center; }
+  #ls-canvas { width: min(100vw, calc(100vh * 4 / 3)); height: min(100vh, calc(100vw * 3 / 4)); display: block; }
+  #ls-barw { position: absolute; left: 50%; bottom: 6%; transform: translateX(-50%); width: min(520px, 70vw); height: 22px; background: #000; border: 2px solid var(--trim2); }
+  #ls-bar { height: 100%; width: 0; background: linear-gradient(180deg, #ffe17a, #c08a10); transition: width .1s; }
+  #ls-txt { position: absolute; left: 50%; bottom: calc(6% + 28px); transform: translateX(-50%); color: var(--gold); text-shadow: 1px 1px 0 #000; }
+  #boot { position: fixed; inset: 0; z-index: 60; background: #000; display: grid; place-items: center; color: var(--gold); font: 16px Georgia, serif; }
+  #boot .bar { width: 320px; height: 10px; border: 1px solid #5a4a2a; margin-top: 10px; } #boot .bar div { height: 100%; width: 0; background: #c08a10; }
+  @media (max-width: 760px) { #lobby .wcbox { grid-template-columns: 1fr; } #board { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ov"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="topbar"><div id="topart">
+    <canvas id="clock" class="px" width="64" height="64"></canvas>
+    <button class="tbtn px" id="tb-quests" style="left:calc(8px * var(--s))">Quests<small>F9</small></button>
+    <button class="tbtn px" id="tb-menu" style="left:calc(177px * var(--s))">Menu<small>F10</small></button>
+    <button class="tbtn px" id="tb-allies" style="left:calc(347px * var(--s))">Allies<small>F11</small></button>
+    <button class="tbtn px" id="tb-log" style="left:calc(517px * var(--s))">Log<small>F12</small></button>
+    <div class="res px" style="left:calc(922px * var(--s))" title="Gold"><img id="ico-gold" alt=""><b id="gold">0</b></div>
+    <div class="res px" style="left:calc(1096px * var(--s))" title="Lumber"><img id="ico-lumber" alt="">0</div>
+    <div class="res px" style="left:calc(1270px * var(--s))" title="Food"><img id="ico-supply" alt="">0/0</div>
+    <div class="res px upkeep" style="left:calc(1444px * var(--s))">No Upkeep</div>
+  </div></div>
+  <div id="testbar" class="wcbox plain"><span>Test speed</span><button id="pausebtn" title="Pause (Pause key)">❚❚</button><button data-speed="1">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button><button data-speed="8">8×</button><span id="netinfo"></span></div>
+  <div id="timerwin" class="wcbox plain hidden"><span id="tw-title"></span><span id="tw-time"></span></div>
+  <div id="board" class="wcbox plain"><div id="board-h"><span>Pyro TD</span><span>Round <b id="bround">1</b></span></div>
+    <div class="bb">
+      <div class="br"><span style="color:#ff3030">Team 1 castle</span><span id="cs0"></span></div><div class="br"><small id="rc0"></small></div>
+      <div class="br"><span style="color:#4a7dff">Team 2 castle</span><span id="cs1"></span></div><div class="br"><small id="rc1"></small></div>
+      <div class="br"><small>Mode</small><small id="bmode"></small></div>
+    </div></div>
+  <div id="msgs"></div>
+  <div id="errmsg" class="fade"></div>
+  <div id="dialog" class="wcbox hidden"></div>
+  <div id="panel" class="wcbox hidden"></div>
+  <div id="chat" class="hidden"><span>To All:</span><input id="chatin" maxlength="120" autocomplete="off"></div>
+  <div id="console"><div id="consoleart">
+    <canvas id="minimap" class="px"></canvas>
+    <button class="mmb px" id="mm-ping" style="top:calc(40px * var(--s))" title="Signal (ping the minimap)">!</button>
+    <button class="mmb px" id="mm-home" style="top:calc(84px * var(--s))" title="Jump to my base (Space)">⌂</button>
+    <button class="mmb px" id="mm-labels" style="top:calc(128px * var(--s))" title="Show model names">A</button>
+    <button class="mmb px" id="mm-sound" style="top:calc(172px * var(--s))" title="Sound on/off">♪</button>
+    <div id="portrait" class="px"></div><div id="hp" class="px"></div><div id="mp" class="px"></div>
+    <div id="info" class="px"></div>
+    <div id="invcover" class="px"></div>
+    <div id="card" class="px"></div>
+  </div></div>
+  <div id="tip" class="hidden"></div>
+  <div id="over" class="hidden"></div>
+</div>
+
+<div id="lobby" class="hidden">
+  <div class="wcbox">
+    <div>
+      <h2>Game Lobby</h2>
+      <div id="lb-slots"></div>
+      <div class="lrow" style="margin-top:14px"><label>Your name</label><input id="lb-name" value="You" maxlength="20"></div>
+      <div class="lrow"><label>Seed</label><input id="lb-seed" placeholder="random" size="10"></div>
+      <div id="lb-net">
+        <h2 style="font-size:16px">Multiplayer (room code)</h2>
+        <div class="row2"><button class="dbtn" id="lb-host">Host a room</button><span id="lb-code"></span></div>
+        <div class="row2" style="margin-top:6px"><input id="lb-joincode" maxlength="5" placeholder="CODE"><button class="dbtn" id="lb-join">Join</button><button class="dbtn hidden" id="lb-leave">Leave room</button></div>
+        <div id="lb-status"></div>
+        <div class="lnote">The host shares the 5-letter code; friends type it and press Join. Slots set to "Open" are filled by players who join.
+          Browsers connect directly to each other (a free public broker only introduces them), so nothing needs to be installed.</div>
+      </div>
+    </div>
+    <div>
+      <h2>Map</h2>
+      <img id="lb-preview" alt="">
+      <div id="lb-title"></div>
+      <div id="lb-desc"></div>
+      <div id="lb-author"></div>
+      <div id="lb-err"></div>
+      <button class="dbtn" id="lb-start">Start Game</button>
+      <div class="lnote">Local test build. Computer players were written for this port (the original bots were empty).</div>
+    </div>
+  </div>
+</div>
+<div id="loading" class="hidden"><canvas id="ls-canvas"></canvas><div id="ls-txt">Loading...</div><div id="ls-barw"><div id="ls-bar"></div></div></div>
+<div id="boot"><div><div id="boot-txt">Loading Warcraft III art...</div><div class="bar"><div id="boot-bar"></div></div></div></div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/mdxparser.js"></script>
+<script src="lib/peerjs.min.js"></script>
+<script src="assets/packs.js"></script>
+<script src="src/gamedata.js"></script>
+<script src="src/engine.js"></script>
+<script src="src/rules.js"></script>
+<script src="src/ai.js"></script>
+<script src="src3d/assets.js"></script>
+<script src="src3d/mdx.js"></script>
+<script src="src3d/terrain.js"></script>
+<script src="src3d/sound.js"></script>
+<script src="src3d/view.js"></script>
+<script src="src3d/net.js"></script>
+<script src="src3d/console.js"></script>
+</body>
+</html>

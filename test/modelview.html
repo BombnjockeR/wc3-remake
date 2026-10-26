@@ -1,0 +1,19 @@
+<!doctype html><html><body style="margin:0;background:#223">
+<canvas id="c" width="1400" height="700"></canvas>
+<script src="../lib/three.min.js"></script><script src="../lib/mdxparser.js"></script>
+<script src="../assets/map-0.js"></script><script src="../src3d/assets.js"></script><script src="../src3d/mdx.js"></script>
+<script>
+const r = new THREE.WebGLRenderer({canvas: document.getElementById('c'), antialias: true});
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#334');
+scene.add(new THREE.AmbientLight(0xffffff, 0.6)); const d = new THREE.DirectionalLight(0xffffff, 0.8); d.position.set(-1,-1,2); scene.add(d);
+const cam = new THREE.PerspectiveCamera(40, 2, 10, 20000); cam.up.set(0,0,1); cam.position.set(1400, -2600, 1500); cam.lookAt(1400, 0, 100);
+const paths = ['war3mapImported\\BloodelfMage.mdx','war3mapImported\\Orc Warlock.mdx','war3mapImported\\Barracks.mdx','war3mapImported\\ChaosGate.mdx','war3mapImported\\HighElfSanctum.mdx','war3mapImported\\Beer Keg V2.mdx','pyro\\standin\\castle.mdx','war3mapImported\\GeneralHeroGlow.mdx'];
+const insts = [];
+paths.forEach((p, i) => { const md = PyroMDX.load(p); if (!md) { console.error('missing', p); return; }
+  const inst = new PyroMDX.Instance(md, {team: i % 2 ? '#0042ff' : '#ff0303'}); inst.group.position.set(i * 400, 0, 0); scene.add(inst.group); insts.push(inst);
+  inst.play(window.SEQ || 'walk') || inst.play('stand'); });
+let last = performance.now();
+function frame(t) { const dt = t - last; last = t; scene.updateMatrixWorld(); insts.forEach(i => i.update(dt, cam)); r.render(scene, cam); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+window.info = () => insts.map(i => i.md.path + ' seq=' + (i.md.sequences[i.seq]||{}).name + ' meshes=' + i.meshes.length);
+</script></body></html>
